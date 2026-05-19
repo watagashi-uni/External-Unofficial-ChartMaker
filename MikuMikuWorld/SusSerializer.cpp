@@ -2,13 +2,16 @@
 #include "SusExporter.h"
 #include "SusParser.h"
 #include "SUS.h"
+#include <cmath>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace MikuMikuWorld
 {	
 	void SusSerializer::serialize(const Score& score, std::string filename)
 	{
 		SUS sus = scoreToSus(score);
-		SusExporter().dump(sus, filename, exportComment);
+		SusExporter().dump(sus, filename, exportComment, includeNoteSpeed);
 	}
 
 	Score SusSerializer::deserialize(std::string filename)
@@ -61,11 +64,25 @@ namespace MikuMikuWorld
 		std::unordered_set<std::string> slideKeys;
 		std::unordered_set<std::string> frictions;
 		std::unordered_set<std::string> hiddenHolds;
+		std::unordered_map<std::string, float> noteSpeedRatios;
+
+		auto rememberNoteSpeed = [&](const SUSNote& note)
+		{
+			if (std::isfinite(note.speedRatio) && note.speedRatio > 0.0f && std::abs(note.speedRatio - 1.0f) > 0.0001f)
+				noteSpeedRatios.insert_or_assign(noteKey(note), note.speedRatio);
+		};
+
+		for (const auto& tap : sus.taps)
+			rememberNoteSpeed(tap);
+
+		for (const auto& dir : sus.directionals)
+			rememberNoteSpeed(dir);
 
 		for (const auto& slide : sus.slides)
 		{
 			for (const auto& note : slide)
 			{
+				rememberNoteSpeed(note);
 				switch (note.type)
 				{
 				case 1:
@@ -76,6 +93,18 @@ namespace MikuMikuWorld
 				}
 			}
 		}
+
+		for (const auto& guide : sus.guides)
+		{
+			for (const auto& note : guide)
+				rememberNoteSpeed(note);
+		}
+
+		auto getNoteSpeed = [&](const SUSNote& note)
+		{
+			const auto it = noteSpeedRatios.find(noteKey(note));
+			return it == noteSpeedRatios.end() ? 1.0f : it->second;
+		};
 
 		for (const auto& dir : sus.directionals)
 		{
@@ -170,6 +199,7 @@ namespace MikuMikuWorld
 			n.critical = criticals.find(key) != criticals.end();
 			n.friction = frictions.find(key) != frictions.end();
 			n.flick = flicks.find(key) != flicks.end() ? flicks[key] : FlickType::None;
+			n.speedRatio = getNoteSpeed(note);
 			n.ID = nextID++;
 
 			notes[n.ID] = n;
@@ -215,6 +245,7 @@ namespace MikuMikuWorld
 						{
 							Note n(NoteType::Hold, note.tick, note.lane - 2, note.width);
 							n.critical = critical;
+							n.speedRatio = getNoteSpeed(note);
 							n.ID = startID;
 
 							if (isGuide)
@@ -236,6 +267,7 @@ namespace MikuMikuWorld
 						{
 							Note n(NoteType::HoldEnd, note.tick, note.lane - 2, note.width);
 							n.critical = (critical ? true : (criticals.find(key) != criticals.end()));
+							n.speedRatio = getNoteSpeed(note);
 							n.ID = nextID++;
 							n.parentID = startID;
 
@@ -261,6 +293,7 @@ namespace MikuMikuWorld
 							Note n(NoteType::HoldMid, note.tick, note.lane - 2, note.width);
 							n.critical = critical;
 							n.friction = false;
+							n.speedRatio = getNoteSpeed(note);
 							n.ID = nextID++;
 							n.parentID = startID;
 
@@ -346,10 +379,10 @@ namespace MikuMikuWorld
 					type++;
 					criticalKeys.insert(noteKey(note));
 				}
-				taps.push_back(SUSNote{ note.tick, note.lane + 2, note.width, type });
+				taps.push_back(SUSNote{ note.tick, note.lane + 2, note.width, type, getEffectiveSpeedRatio(note, score) });
 
 				if (note.isFlick())
-					directionals.push_back(SUSNote{ note.tick, note.lane + 2, note.width, flickToType[static_cast<int>(note.flick)] });
+					directionals.push_back(SUSNote{ note.tick, note.lane + 2, note.width, flickToType[static_cast<int>(note.flick)], getEffectiveSpeedRatio(note, score) });
 			}
 		}
 
@@ -376,8 +409,9 @@ namespace MikuMikuWorld
 			slide.reserve(hold.steps.size() + 2);
 
 			const Note& start = score.notes.at(hold.start.ID);
+			const float holdSpeedRatio = getEffectiveSpeedRatio(start, score);
 
-			slide.push_back(SUSNote{ start.tick, start.lane + 2, start.width, 1 });
+			slide.push_back(SUSNote{ start.tick, start.lane + 2, start.width, 1, holdSpeedRatio });
 
 			bool hasEase = hold.start.ease != EaseType::Linear;
 			bool invisibleTapPoint =
@@ -386,7 +420,7 @@ namespace MikuMikuWorld
 				hold.startType != HoldNoteType::Normal && start.critical;
 
 			if (hasEase)
-				directionals.push_back(SUSNote{ start.tick, start.lane + 2, start.width, hold.start.ease == EaseType::EaseIn ? 2 : 6 });
+				directionals.push_back(SUSNote{ start.tick, start.lane + 2, start.width, hold.start.ease == EaseType::EaseIn ? 2 : 6, holdSpeedRatio });
 
 			bool guideAlreadyOnCritical = hold.isGuide() && criticalKeys.find(noteKey(start)) != criticalKeys.end();
 
@@ -399,37 +433,37 @@ namespace MikuMikuWorld
 			}
 
 			if (type > 1 && !((type == 7 || type == 8) && guideAlreadyOnCritical))
-				taps.push_back({ start.tick, start.lane + 2, start.width, type });
+				taps.push_back({ start.tick, start.lane + 2, start.width, type, holdSpeedRatio });
 
 			for (const auto& step : hold.steps)
 			{
 				const Note& midNote = score.notes.at(step.ID);
 
-				slide.push_back(SUSNote{ midNote.tick, midNote.lane + 2, midNote.width, step.type == HoldStepType::Hidden ? 5 : 3 });
+				slide.push_back(SUSNote{ midNote.tick, midNote.lane + 2, midNote.width, step.type == HoldStepType::Hidden ? 5 : 3, holdSpeedRatio });
 				if (step.type == HoldStepType::Skip)
 				{
-					taps.push_back(SUSNote{ midNote.tick, midNote.lane + 2, midNote.width, 3 });
+					taps.push_back(SUSNote{ midNote.tick, midNote.lane + 2, midNote.width, 3, holdSpeedRatio });
 				}
 				else if (step.ease != EaseType::Linear)
 				{
 					int stepTapType = hold.isGuide() ? start.critical ? 8 : 7 : 1;
-					taps.push_back(SUSNote{ midNote.tick, midNote.lane + 2, midNote.width, stepTapType });
-					directionals.push_back(SUSNote{ midNote.tick, midNote.lane + 2, midNote.width, step.ease == EaseType::EaseIn ? 2 : 6 });
+					taps.push_back(SUSNote{ midNote.tick, midNote.lane + 2, midNote.width, stepTapType, holdSpeedRatio });
+					directionals.push_back(SUSNote{ midNote.tick, midNote.lane + 2, midNote.width, step.ease == EaseType::EaseIn ? 2 : 6, holdSpeedRatio });
 				}
 			}
 
 			const Note& end = score.notes.at(hold.end);
 
-			slide.push_back(SUSNote{ end.tick, end.lane + 2, end.width, 2 });
+			slide.push_back(SUSNote{ end.tick, end.lane + 2, end.width, 2, holdSpeedRatio });
 
 			// Hidden and guide slides do not have flicks
 			if (end.isFlick() && hold.endType == HoldNoteType::Normal)
 			{
-				directionals.push_back(SUSNote{ end.tick, end.lane + 2, end.width, flickToType[static_cast<int>(end.flick)] });
+				directionals.push_back(SUSNote{ end.tick, end.lane + 2, end.width, flickToType[static_cast<int>(end.flick)], holdSpeedRatio });
 
 				// Critical friction notes use type 6 not 2
 				if (end.critical && !start.critical && !end.friction)
-					taps.push_back(SUSNote{ end.tick, end.lane + 2, end.width, 2 });
+					taps.push_back(SUSNote{ end.tick, end.lane + 2, end.width, 2, holdSpeedRatio });
 			}
 
 			int endType = hold.endType == HoldNoteType::Hidden ? 7 : end.friction ? 5 : 1;
@@ -440,7 +474,7 @@ namespace MikuMikuWorld
 			}
 
 			if (endType != 1 && endType != 2)
-				taps.push_back(SUSNote{ end.tick, end.lane + 2, end.width, endType });
+				taps.push_back(SUSNote{ end.tick, end.lane + 2, end.width, endType, holdSpeedRatio });
 
 			if (hold.isGuide())
 			{

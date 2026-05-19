@@ -11,6 +11,7 @@ namespace MikuMikuWorld
 		int lane;
 		int width;
 		int type;
+		float speedRatio{ 1.0f };
 	};
 
 	struct BPM

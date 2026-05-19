@@ -33,6 +33,7 @@ namespace MikuMikuWorld
 
 		bool isCommand(const std::string& line);
 		int getTicks(int measure, int i, int total);
+		std::vector<std::pair<std::string, float>> getNoteCells(const std::string& data);
 
 		SUSNoteStream getNoteStream(const std::vector<SUSNote>& stream);
 		std::vector<SUSNote> getNotes(const SusDataLine& line);

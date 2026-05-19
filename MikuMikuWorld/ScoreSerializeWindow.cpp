@@ -21,6 +21,7 @@ namespace MikuMikuWorld
 	static const std::array<std::string, FORMAT_COUNT> FORMAT_NAMES = {
 		IO::formatString("%s (%s)", IO::mmwsFilter.filterName.c_str(), MMWS_EXTENSION),
 		IO::formatString("%s (%s)", IO::susFilter.filterName.c_str(), SUS_EXTENSION),
+		IO::formatString("%s Notes Speed (Experimental) (%s)", IO::susFilter.filterName.c_str(), SUS_EXTENSION),
 		IO::formatString("%s (%s)", IO::customScoreJsonFilter.filterName.c_str(), JSON_EXTENSION),
 		IO::lvlDatFilter.filterName,
 	};
@@ -63,7 +64,7 @@ namespace MikuMikuWorld
     }
 
 	void DefaultScoreSerializeController::createSerializer() {
-		SerializeFormat format = toSerializeFormat(filename);
+		SerializeFormat format = isValidFormat(selectedFormat) ? selectedFormat : toSerializeFormat(filename);
 		if (format == SerializeFormat::SusFormat && !susNoteSpeedWarningAcknowledged && hasUnsupportedSusNoteSpeed(score))
 		{
 			pendingSusNoteSpeedWarning = true;
@@ -78,6 +79,9 @@ namespace MikuMikuWorld
 			break;
 		case SerializeFormat::SusFormat:
 			serializer = std::make_unique<SusSerializer>();
+			break;
+		case SerializeFormat::SusNoteSpeedFormat:
+			serializer = std::make_unique<SusSerializer>(true);
 			break;
 		case SerializeFormat::CustomScoreJsonFormat:
 			serializer = std::make_unique<CustomScoreJsonSerializer>();
@@ -262,6 +266,7 @@ namespace MikuMikuWorld
 			deserializer = std::make_unique<NativeScoreSerializer>();
 			break;
 		case SerializeFormat::SusFormat:
+		case SerializeFormat::SusNoteSpeedFormat:
 			deserializer = std::make_unique<SusSerializer>();
 			break;
 		case SerializeFormat::CustomScoreJsonFormat:
@@ -333,6 +338,9 @@ namespace MikuMikuWorld
 					// Temporarily disable lvldata format
 					for (int i = 0, n = static_cast<int>(SerializeFormat::LvlDataFormat); i < n; ++i)
 					{
+						if (static_cast<SerializeFormat>(i) == SerializeFormat::SusNoteSpeedFormat)
+							continue;
+
 						bool isSelected = (static_cast<int>(selectedFormat) == i);
 						if (isSelected)
 						{

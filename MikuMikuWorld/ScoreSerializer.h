@@ -22,6 +22,7 @@ namespace MikuMikuWorld
 	{
 		NativeFormat,
 		SusFormat,
+		SusNoteSpeedFormat,
 		CustomScoreJsonFormat,
 		LvlDataFormat,
 		FormatCount

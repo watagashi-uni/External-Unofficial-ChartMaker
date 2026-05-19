@@ -2,6 +2,7 @@
 #include "IO.h"
 #include "File.h"
 #include <algorithm>
+#include <cctype>
 #include <map>
 
 using namespace IO;
@@ -67,6 +68,50 @@ namespace MikuMikuWorld
 			+ ((i * bars[bIndex].ticksPerMeasure) / total);
 	}
 
+	std::vector<std::pair<std::string, float>> SusParser::getNoteCells(const std::string& data)
+	{
+		std::vector<std::pair<std::string, float>> cells;
+		const bool hasNoteSpeed = data.find(',') != std::string::npos;
+		if (!hasNoteSpeed)
+		{
+			for (size_t i = 0; i + 1 < data.size(); i += 2)
+				cells.push_back({ data.substr(i, 2), 1.0f });
+			return cells;
+		}
+
+		size_t i = 0;
+		while (i < data.size())
+		{
+			while (i < data.size() && std::isspace(static_cast<unsigned char>(data[i])))
+				++i;
+
+			if (i + 1 >= data.size())
+				break;
+
+			const std::string noteData = data.substr(i, 2);
+			i += 2;
+
+			float speedRatio = 1.0f;
+			if (i < data.size() && data[i] == ',')
+			{
+				++i;
+				size_t speedStart = i;
+				while (i < data.size() && !std::isspace(static_cast<unsigned char>(data[i])) && data[i] != ',')
+					++i;
+
+				if (i > speedStart)
+					speedRatio = static_cast<float>(atof(data.substr(speedStart, i - speedStart).c_str()));
+			}
+
+			cells.push_back({ noteData, speedRatio });
+
+			while (i < data.size() && (std::isspace(static_cast<unsigned char>(data[i])) || data[i] == ','))
+				++i;
+		}
+
+		return cells;
+	}
+
 	SUSNoteStream SusParser::getNoteStream(const std::vector<SUSNote>& stream)
 	{
 		std::vector<SUSNote> sortedStream = stream;
@@ -100,15 +145,18 @@ namespace MikuMikuWorld
 	std::vector<SUSNote> SusParser::getNotes(const SusDataLine& line)
 	{
 		std::vector<SUSNote> notes;
-		for (size_t i = 0; i + 1 < line.data.size(); i += 2)
+		const auto cells = getNoteCells(line.data);
+		for (size_t i = 0; i < cells.size(); ++i)
 		{
-			if (line.data[i] == '0' && line.data[i + 1] == '0')
+			const std::string& data = cells[i].first;
+			if (data.size() < 2 || data[0] == '0' && data[1] == '0')
 				continue;
 
-			notes.push_back(SUSNote{ getTicks(line.getEffectiveMeasure(), i, line.data.size()),
+			notes.push_back(SUSNote{ getTicks(line.getEffectiveMeasure(), static_cast<int>(i * 2), static_cast<int>(cells.size() * 2)),
 				(int)std::stoul(line.header.substr(4, 1), nullptr, 36),
-				(int)std::stoul(line.data.substr(i + 1, 1), nullptr, 36),
-				(int)std::stoul(line.data.substr(i, 1), nullptr, 36)
+				(int)std::stoul(data.substr(1, 1), nullptr, 36),
+				(int)std::stoul(data.substr(0, 1), nullptr, 36),
+				cells[i].second
 			});
 		}
 

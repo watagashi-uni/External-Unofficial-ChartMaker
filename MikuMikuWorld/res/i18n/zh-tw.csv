@@ -55,7 +55,7 @@ export_successful, 已成功匯出
 export_anyway, 仍然匯出
 unknown_file_format, 未知的檔案類型
 open_as_file_format, 以何種格式開啟？
-sus_notespeed_export_warning, 目前譜面包含 Notes Speed。SUS 不支援單個 note 的 Notes Speed，匯出後這些值會遺失。是否繼續？
+sus_notespeed_export_warning, 目前譜面包含 Notes Speed。標準 SUS 匯出會遺失這些值；如需保留，請選擇實驗性的 SUS Notes Speed 匯出。是否繼續？
 error, 錯誤
 error_reason, 錯誤原因
 error_open_file_msg1, 檔案

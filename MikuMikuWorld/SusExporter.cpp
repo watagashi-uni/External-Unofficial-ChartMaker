@@ -2,12 +2,40 @@
 #include "IO.h"
 #include "File.h"
 #include <algorithm>
+#include <cstdio>
 #include <numeric>
 
 using namespace IO;
 
 namespace MikuMikuWorld
 {
+	static std::string formatSusNoteSpeed(float speedRatio)
+	{
+		char buf[64]{};
+		std::snprintf(buf, sizeof(buf), "%.7f", speedRatio);
+		std::string value = buf;
+		const size_t end = value.find_last_not_of('0');
+		if (end != std::string::npos)
+			value.erase(end + 1);
+		if (!value.empty() && value.back() == '.')
+			value.pop_back();
+		if (value.find('.') == std::string::npos)
+			value.append(".0");
+		return value;
+	}
+
+	static std::string joinSusCells(const std::vector<std::string>& cells, bool includeNoteSpeed)
+	{
+		return std::accumulate(cells.begin(), cells.end(), std::string{}, [includeNoteSpeed](std::string result, const std::string& cell)
+		{
+			if (includeNoteSpeed && !result.empty())
+				result.push_back(' ');
+			result.append(cell);
+			return result;
+		});
+	}
+
+
 	int ChannelProvider::generateChannel(int startTick, int endTick)
 	{
 		TickRange range{ startTick, endTick };
@@ -79,7 +107,7 @@ namespace MikuMikuWorld
 		}
 	};
 
-	void SusExporter::appendData(int tick, std::string info, std::string data)
+	void SusExporter::appendData(int tick, std::string info, std::string data, float speedRatio)
 	{
 		for (const auto& [barLength, barTicks] : barLengthTicks)
 		{
@@ -90,7 +118,7 @@ namespace MikuMikuWorld
 				measureMap.measure = currentMeasure;
 
 				NoteMap& map = measureMap.notesMap[info];
-				map.data.push_back(NoteMap::RawData{ tick - barTicks, data });
+				map.data.push_back(NoteMap::RawData{ tick - barTicks, data, speedRatio });
 				map.ticksPerMeasure = barLength.length * ticksPerBeat;
 				break;
 			}
@@ -105,10 +133,10 @@ namespace MikuMikuWorld
 			info.append(channel);
 
 		char buff2[10];
-		appendData(note.tick, info, std::to_string(note.type) + tostringBaseN(buff2, note.width, 36));
+		appendData(note.tick, info, std::to_string(note.type) + tostringBaseN(buff2, note.width, 36), note.speedRatio);
 	}
 
-	std::vector<std::string> SusExporter::getNoteLines(int baseMeasure)
+	std::vector<std::string> SusExporter::getNoteLines(int baseMeasure, bool includeNoteSpeed)
 	{
 		std::vector<std::string> lines;
 
@@ -140,42 +168,60 @@ namespace MikuMikuWorld
 
 				// Number of notes including empty ones in a line
 				int dataCount = notes.ticksPerMeasure / gcd;
-				std::string data(dataCount * 2, '0');
+				bool needsTrailingEmptyCell = false;
+				if (includeNoteSpeed)
+				{
+					for (const auto& raw : notes.data)
+					{
+						const int index = (raw.tick % notes.ticksPerMeasure) / gcd;
+						if (index == dataCount - 1)
+						{
+							needsTrailingEmptyCell = true;
+							break;
+						}
+					}
+				}
+
+				const int outputDataCount = needsTrailingEmptyCell ? dataCount * 2 : dataCount;
+				const int outputIndexScale = needsTrailingEmptyCell ? 2 : 1;
+				std::vector<std::string> data(outputDataCount, includeNoteSpeed ? "00,1.0" : "00");
 				for (const auto& raw : notes.data)
 				{
-					int index = (raw.tick % notes.ticksPerMeasure) / gcd * 2;
-					if (data.substr(index, 2) != "00")
+					int index = ((raw.tick % notes.ticksPerMeasure) / gcd) * outputIndexScale;
+					if (data[index].substr(0, 2) != "00")
 					{
 						conflicts.push_back(raw);
 					}
 					else
 					{
-						data[index + 0] = raw.data[0];
-						data[index + 1] = raw.data[1];
+						data[index] = includeNoteSpeed
+							? raw.data + "," + formatSusNoteSpeed(raw.speedRatio)
+							: raw.data;
 					}
 				}
 
-				lines.push_back(formatString("#%03d%s:", measure - baseMeasure, info.c_str()) + data);
+				lines.push_back(formatString("#%03d%s:", measure - baseMeasure, info.c_str()) + joinSusCells(data, includeNoteSpeed));
 
 				while (conflicts.size())
 				{
 					temp.clear();
-					std::string data2(dataCount * 2, '0');
+					std::vector<std::string> data2(outputDataCount, includeNoteSpeed ? "00,1.0" : "00");
 					for (const auto& item : conflicts)
 					{
-						int index = (item.tick % notes.ticksPerMeasure) / gcd * 2;
-						if (data2.substr(index, 2) != "00")
+						int index = ((item.tick % notes.ticksPerMeasure) / gcd) * outputIndexScale;
+						if (data2[index].substr(0, 2) != "00")
 						{
 							temp.push_back(item);
 						}
 						else
 						{
-							data2[index + 0] = item.data[0];
-							data2[index + 1] = item.data[1];
+							data2[index] = includeNoteSpeed
+								? item.data + "," + formatSusNoteSpeed(item.speedRatio)
+								: item.data;
 						}
 					}
 
-					lines.push_back(formatString("#%03d%s:", measure - baseMeasure, info.c_str()) + data2);
+					lines.push_back(formatString("#%03d%s:", measure - baseMeasure, info.c_str()) + joinSusCells(data2, includeNoteSpeed));
 					conflicts = temp;
 				}
 			}
@@ -184,7 +230,7 @@ namespace MikuMikuWorld
 		return lines;
 	}
 
-	void SusExporter::dump(const SUS& sus, const std::string& filename, std::string comment)
+	void SusExporter::dump(const SUS& sus, const std::string& filename, std::string comment, bool includeNoteSpeed)
 	{
 		std::vector<std::string> lines;
 		if (!comment.empty())
@@ -350,7 +396,7 @@ namespace MikuMikuWorld
 		for (const auto& tap : taps)
 			appendNoteData(tap, "1", "-1");
 
-		std::vector<std::string> tapLines = getNoteLines(baseMeasure);
+		std::vector<std::string> tapLines = getNoteLines(baseMeasure, includeNoteSpeed);
 		lines.insert(lines.end(), tapLines.begin(), tapLines.end());
 
 		// Write directional notes
@@ -358,21 +404,21 @@ namespace MikuMikuWorld
 		for (const auto& directional : directionals)
 			appendNoteData(directional, "5", "-1");
 
-		std::vector<std::string> directionalLines = getNoteLines(baseMeasure);
+		std::vector<std::string> directionalLines = getNoteLines(baseMeasure, includeNoteSpeed);
 		lines.insert(lines.end(), directionalLines.begin(), directionalLines.end());
 
 		// Write slide notes
 		measuresMap.clear();
 		appendSlideData(slides, "3");
 
-		std::vector<std::string> slideLines = getNoteLines(baseMeasure);
+		std::vector<std::string> slideLines = getNoteLines(baseMeasure, includeNoteSpeed);
 		lines.insert(lines.end(), slideLines.begin(), slideLines.end());
 
 		// Write guide notes
 		measuresMap.clear();
 		appendSlideData(guides, "9");
 
-		std::vector<std::string> guideLines = getNoteLines(baseMeasure);
+		std::vector<std::string> guideLines = getNoteLines(baseMeasure, includeNoteSpeed);
 		lines.insert(lines.end(), guideLines.begin(), guideLines.end());
 
 		File susfile(filename, FileMode::Write);

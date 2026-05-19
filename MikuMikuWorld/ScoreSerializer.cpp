@@ -44,6 +44,7 @@ namespace MikuMikuWorld
 		case SerializeFormat::NativeFormat:
 			return IO::mmwsFilter;
 		case SerializeFormat::SusFormat:
+		case SerializeFormat::SusNoteSpeedFormat:
 			return IO::susFilter;
 		case SerializeFormat::CustomScoreJsonFormat:
 			return IO::customScoreJsonFilter;
@@ -61,6 +62,7 @@ namespace MikuMikuWorld
 		case SerializeFormat::NativeFormat:
 			return "unchmmws";
 		case SerializeFormat::SusFormat:
+		case SerializeFormat::SusNoteSpeedFormat:
 			return "sus";
 		case SerializeFormat::CustomScoreJsonFormat:
 			return "json";

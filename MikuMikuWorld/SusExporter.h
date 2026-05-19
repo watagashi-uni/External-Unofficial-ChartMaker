@@ -74,6 +74,7 @@ namespace MikuMikuWorld
 		{
 			int tick;
 			std::string data;
+			float speedRatio{ 1.0f };
 		};
 
 		std::vector<RawData> data;
@@ -102,13 +103,13 @@ namespace MikuMikuWorld
 		int getMeasureFromTicks(int ticks);
 		int getTicksFromMeasure(int measure);
 		void appendSlideData(const SUSNoteStream& slides, const std::string& infoPrefix);
-		std::vector<std::string> getNoteLines(int baseMeasure);
+		std::vector<std::string> getNoteLines(int baseMeasure, bool includeNoteSpeed);
 
 	public:
 		SusExporter();
 
-		void appendData(int tick, std::string info, std::string data);
+		void appendData(int tick, std::string info, std::string data, float speedRatio = 1.0f);
 		void appendNoteData(const SUSNote& note, const std::string infoPrefix, const std::string channel);
-		void dump(const SUS& sus, const std::string& filename, std::string comment = "");
+		void dump(const SUS& sus, const std::string& filename, std::string comment = "", bool includeNoteSpeed = false);
 	};
 }

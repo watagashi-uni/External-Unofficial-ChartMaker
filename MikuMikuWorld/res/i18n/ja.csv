@@ -56,7 +56,7 @@ export_anyway, このままエクスポート
 unknown_file_format, 不明なファイル形式
 open_as_file_format, 開こうとしているファイルのフォーマットを選択してください。
 export_as_file_format, エクスポートするフォーマットを選択してください。
-sus_notespeed_export_warning, この譜面には Notes Speed が含まれています。SUS はノート単位の Notes Speed をサポートしていないため、エクスポートするとその値は失われます。続行しますか？
+sus_notespeed_export_warning, この譜面には Notes Speed が含まれています。通常の SUS エクスポートではその値は失われます。保持するには実験的な SUS Notes Speed エクスポートを選択してください。続行しますか？
 error, エラー
 error_reason, 理由
 error_open_file_msg1, ファイル
