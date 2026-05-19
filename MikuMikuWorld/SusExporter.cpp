@@ -2,6 +2,7 @@
 #include "IO.h"
 #include "File.h"
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <numeric>
 
@@ -26,13 +27,28 @@ namespace MikuMikuWorld
 
 	static std::string joinSusCells(const std::vector<std::string>& cells, bool includeNoteSpeed)
 	{
-		return std::accumulate(cells.begin(), cells.end(), std::string{}, [includeNoteSpeed](std::string result, const std::string& cell)
+		std::string joined = std::accumulate(cells.begin(), cells.end(), std::string{}, [includeNoteSpeed](std::string result, const std::string& cell)
 		{
 			if (includeNoteSpeed && !result.empty())
 				result.push_back(' ');
 			result.append(cell);
 			return result;
 		});
+		if (includeNoteSpeed && !joined.empty())
+			joined.push_back(' ');
+		return joined;
+	}
+
+	static std::vector<std::string> expandTrailingSusNoteSpeedLine(const std::vector<std::string>& cells)
+	{
+		std::vector<std::string> expanded;
+		expanded.reserve(cells.size() * 2);
+		for (const auto& cell : cells)
+		{
+			expanded.push_back(cell);
+			expanded.push_back("00,1.0");
+		}
+		return expanded;
 	}
 
 
@@ -168,60 +184,63 @@ namespace MikuMikuWorld
 
 				// Number of notes including empty ones in a line
 				int dataCount = notes.ticksPerMeasure / gcd;
-				bool needsTrailingEmptyCell = false;
+				bool lineHasNoteSpeed = false;
 				if (includeNoteSpeed)
 				{
 					for (const auto& raw : notes.data)
 					{
-						const int index = (raw.tick % notes.ticksPerMeasure) / gcd;
-						if (index == dataCount - 1)
+						if (std::isfinite(raw.speedRatio) && raw.speedRatio > 0.0f && std::abs(raw.speedRatio - 1.0f) > 0.0001f)
 						{
-							needsTrailingEmptyCell = true;
+							lineHasNoteSpeed = true;
 							break;
 						}
 					}
 				}
 
-				const int outputDataCount = needsTrailingEmptyCell ? dataCount * 2 : dataCount;
-				const int outputIndexScale = needsTrailingEmptyCell ? 2 : 1;
-				std::vector<std::string> data(outputDataCount, includeNoteSpeed ? "00,1.0" : "00");
+				std::vector<std::string> data(dataCount, lineHasNoteSpeed ? "00,1.0" : "00");
 				for (const auto& raw : notes.data)
 				{
-					int index = ((raw.tick % notes.ticksPerMeasure) / gcd) * outputIndexScale;
+					int index = (raw.tick % notes.ticksPerMeasure) / gcd;
 					if (data[index].substr(0, 2) != "00")
 					{
 						conflicts.push_back(raw);
 					}
 					else
 					{
-						data[index] = includeNoteSpeed
+						data[index] = lineHasNoteSpeed
 							? raw.data + "," + formatSusNoteSpeed(raw.speedRatio)
 							: raw.data;
 					}
 				}
 
-				lines.push_back(formatString("#%03d%s:", measure - baseMeasure, info.c_str()) + joinSusCells(data, includeNoteSpeed));
+				auto outputData = data;
+				if (lineHasNoteSpeed)
+					outputData = expandTrailingSusNoteSpeedLine(outputData);
+				lines.push_back(formatString("#%03d%s:", measure - baseMeasure, info.c_str()) + joinSusCells(outputData, lineHasNoteSpeed));
 
 				while (conflicts.size())
 				{
 					temp.clear();
-					std::vector<std::string> data2(outputDataCount, includeNoteSpeed ? "00,1.0" : "00");
+					std::vector<std::string> data2(dataCount, lineHasNoteSpeed ? "00,1.0" : "00");
 					for (const auto& item : conflicts)
 					{
-						int index = ((item.tick % notes.ticksPerMeasure) / gcd) * outputIndexScale;
+						int index = (item.tick % notes.ticksPerMeasure) / gcd;
 						if (data2[index].substr(0, 2) != "00")
 						{
 							temp.push_back(item);
 						}
 						else
 						{
-							data2[index] = includeNoteSpeed
+							data2[index] = lineHasNoteSpeed
 								? item.data + "," + formatSusNoteSpeed(item.speedRatio)
-								: item.data;
+							: item.data;
 						}
 					}
 
-					lines.push_back(formatString("#%03d%s:", measure - baseMeasure, info.c_str()) + joinSusCells(data2, includeNoteSpeed));
+					auto outputData2 = data2;
+					if (lineHasNoteSpeed)
+						outputData2 = expandTrailingSusNoteSpeedLine(outputData2);
+					lines.push_back(formatString("#%03d%s:", measure - baseMeasure, info.c_str()) + joinSusCells(outputData2, lineHasNoteSpeed));
 					conflicts = temp;
 				}
 			}
