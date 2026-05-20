@@ -11,8 +11,6 @@
 #include "ApplicationConfiguration.h"
 #include "Colors.h"
 #include "ScoreEditor.h"
-#include <algorithm>
-#include <cmath>
 
 namespace MikuMikuWorld
 {
@@ -21,7 +19,6 @@ namespace MikuMikuWorld
 	static const std::array<std::string, FORMAT_COUNT> FORMAT_NAMES = {
 		IO::formatString("%s (%s)", IO::mmwsFilter.filterName.c_str(), MMWS_EXTENSION),
 		IO::formatString("%s (%s)", IO::susFilter.filterName.c_str(), SUS_EXTENSION),
-		IO::formatString("%s Notes Speed (Experimental) (%s)", IO::susFilter.filterName.c_str(), SUS_EXTENSION),
 		IO::formatString("%s (%s)", IO::customScoreJsonFilter.filterName.c_str(), JSON_EXTENSION),
 		IO::lvlDatFilter.filterName,
 	};
@@ -36,14 +33,6 @@ namespace MikuMikuWorld
 		this->score = std::move(score);
 		this->filename = filename;
 		createSerializer();
-	}
-
-	bool DefaultScoreSerializeController::hasUnsupportedSusNoteSpeed(const Score& score)
-	{
-		return std::any_of(score.notes.begin(), score.notes.end(), [](const auto& item)
-		{
-			return std::abs(item.second.speedRatio - 1.0f) > 0.0001f;
-		});
 	}
 
     bool DefaultScoreSerializeController::openFileDialog(SerializeFormat format, std::string &filename)
@@ -65,23 +54,13 @@ namespace MikuMikuWorld
 
 	void DefaultScoreSerializeController::createSerializer() {
 		SerializeFormat format = isValidFormat(selectedFormat) ? selectedFormat : toSerializeFormat(filename);
-		if (format == SerializeFormat::SusFormat && !susNoteSpeedWarningAcknowledged && hasUnsupportedSusNoteSpeed(score))
-		{
-			pendingSusNoteSpeedWarning = true;
-			serializer.reset();
-			return;
-		}
 
-		pendingSusNoteSpeedWarning = false;
 		switch (format) {
 		case SerializeFormat::NativeFormat:
 			serializer = std::make_unique<NativeScoreSerializer>();
 			break;
 		case SerializeFormat::SusFormat:
 			serializer = std::make_unique<SusSerializer>();
-			break;
-		case SerializeFormat::SusNoteSpeedFormat:
-			serializer = std::make_unique<SusSerializer>(true);
 			break;
 		case SerializeFormat::CustomScoreJsonFormat:
 			serializer = std::make_unique<CustomScoreJsonSerializer>();
@@ -101,57 +80,6 @@ namespace MikuMikuWorld
 
 	SerializeResult DefaultScoreSerializeController::update()
 	{
-		if (pendingSusNoteSpeedWarning)
-		{
-			if (!ImGui::IsPopupOpen("###sus_notespeed_warning"))
-				ImGui::OpenPopup("###sus_notespeed_warning");
-
-			const ImGuiViewport* viewport = ImGui::GetMainViewport();
-			const ImGuiStyle& style = ImGui::GetStyle();
-			const char* warningText = getString("sus_notespeed_export_warning");
-			const float popupWidth = std::clamp(viewport->WorkSize.x * 0.42f, 360.0f, 520.0f);
-			const float contentWidth = popupWidth - (style.WindowPadding.x * 2.0f);
-			const float buttonHeight = ImGui::GetFrameHeight();
-			const float titleBarHeight = ImGui::GetFontSize() + (style.FramePadding.y * 2.0f);
-			const float messageHeight = ImGui::CalcTextSize(warningText, nullptr, false, contentWidth).y;
-			const float popupHeight =
-				titleBarHeight +
-				(style.WindowPadding.y * 2.0f) +
-				messageHeight +
-				style.ItemSpacing.y +
-				buttonHeight;
-
-			ImGui::SetNextWindowPos(viewport->GetWorkCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-			ImGui::SetNextWindowSize({ popupWidth, popupHeight }, ImGuiCond_Always);
-			ImGui::SetNextWindowViewport(viewport->ID);
-			if (ImGui::BeginPopupModal(APP_NAME "###sus_notespeed_warning", NULL, ImGuiWindowFlags_NoResize))
-			{
-				ImGui::TextWrapped("%s", warningText);
-				ImVec2 avail = ImGui::GetContentRegionAvail();
-				const float btnWidth = avail.x / 2 - style.ItemSpacing.x * 2;
-
-				if (ImGui::Button(getString("export_anyway"), { btnWidth, buttonHeight }))
-				{
-					susNoteSpeedWarningAcknowledged = true;
-					pendingSusNoteSpeedWarning = false;
-					createSerializer();
-					ImGui::CloseCurrentPopup();
-				}
-
-				ImGui::SameLine(0, style.ItemSpacing.x * 2);
-				if (ImGui::Button(getString("cancel"), { btnWidth, buttonHeight }))
-				{
-					pendingSusNoteSpeedWarning = false;
-					filename.clear();
-					ImGui::CloseCurrentPopup();
-				}
-
-				ImGui::EndPopup();
-			}
-
-			return SerializeResult::None;
-		}
-
 		if (serializer && !filename.empty())
 		{
 			try
@@ -266,7 +194,6 @@ namespace MikuMikuWorld
 			deserializer = std::make_unique<NativeScoreSerializer>();
 			break;
 		case SerializeFormat::SusFormat:
-		case SerializeFormat::SusNoteSpeedFormat:
 			deserializer = std::make_unique<SusSerializer>();
 			break;
 		case SerializeFormat::CustomScoreJsonFormat:
@@ -338,9 +265,6 @@ namespace MikuMikuWorld
 					// Temporarily disable lvldata format
 					for (int i = 0, n = static_cast<int>(SerializeFormat::LvlDataFormat); i < n; ++i)
 					{
-						if (static_cast<SerializeFormat>(i) == SerializeFormat::SusNoteSpeedFormat)
-							continue;
-
 						bool isSelected = (static_cast<int>(selectedFormat) == i);
 						if (isSelected)
 						{

@@ -7,7 +7,6 @@ namespace MikuMikuWorld
 	class DefaultScoreSerializeController : public ScoreSerializeController
 	{
 		static bool openFileDialog(SerializeFormat format, std::string& filename);
-		static bool hasUnsupportedSusNoteSpeed(const Score& score);
 		void createSerializer();
 	public:
 		DefaultScoreSerializeController(Score score);
@@ -17,8 +16,6 @@ namespace MikuMikuWorld
 	private:
 		std::unique_ptr<ScoreSerializer> serializer;
 		SerializeFormat selectedFormat{ -1 };
-		bool pendingSusNoteSpeedWarning{ false };
-		bool susNoteSpeedWarningAcknowledged{ false };
 	};
 
 	class DefaultScoreDeserializeController : public ScoreSerializeController

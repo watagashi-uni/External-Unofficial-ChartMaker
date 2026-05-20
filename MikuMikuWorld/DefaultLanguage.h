@@ -61,7 +61,6 @@ namespace MikuMikuWorld
 		{"unknown_file_format", "Unknown file format"},
 		{"open_as_file_format", "Do you want to open it as..."},
 		{"export_as_file_format", "Do you want to export it as..."},
-		{"sus_notespeed_export_warning", "This chart contains Notes Speed values. Standard SUS export will drop them. Use the experimental SUS Notes Speed export to keep them, or continue anyway?"},
 		{"error", "Error"},
 		{"error_reason", "Reason"},
 		{"error_open_file_msg1", "Cannot open the file"},
